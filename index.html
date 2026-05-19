@@ -1,0 +1,1023 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Legal Document Summariser &amp; Invoice Generator</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner {
+    width: 52px; height: 52px;
+    border: 5px solid rgba(30,58,95,0.15);
+    border-top-color: #1e3a5f;
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+  }
+  input.err { border-color: #ef4444 !important; background-color: #fef2f2 !important; }
+</style>
+</head>
+<body class="bg-slate-100 min-h-screen text-gray-800" style="font-family: system-ui, sans-serif;">
+
+<!-- HEADER -->
+<header style="background:#1e3a5f;" class="text-white px-6 py-3 shadow-lg flex items-center gap-3">
+  <svg class="w-7 h-7 opacity-75 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+  </svg>
+  <div>
+    <h1 class="text-lg font-bold tracking-wide leading-tight">Legal Document Summariser &amp; Invoice Generator</h1>
+    <p class="text-xs" style="color:#93c5fd;">Powered by Claude AI &middot; UK Solicitor Tool</p>
+  </div>
+</header>
+
+<!-- MAIN TWO-PANEL -->
+<div class="flex" style="height:calc(100vh - 56px);">
+
+  <!-- ============================== LEFT PANEL ============================== -->
+  <div class="w-1/2 overflow-y-auto bg-white border-r border-slate-200">
+    <div class="p-5 space-y-4">
+
+      <!-- DEMO MODE BUTTON -->
+      <button onclick="loadDemoData()"
+        class="w-full flex items-center justify-center gap-2 font-bold py-2.5 px-4 rounded-lg text-sm tracking-wide border-2 transition-all hover:opacity-90"
+        style="background:#fefce8;border-color:#ca8a04;color:#92400e;">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M13 10V3L4 14h7v7l9-11h-7z"/>
+        </svg>
+        Load Demo Data &mdash; Harrison &amp; Cole Conveyancing
+      </button>
+
+      <!-- FILE UPLOAD -->
+      <div>
+        <label class="block text-xs font-bold mb-2" style="color:#1e3a5f;">
+          DOCUMENTS TO REVIEW <span class="text-red-500">*</span>
+          <span class="font-normal text-gray-400 normal-case">&nbsp;&mdash; up to 5 PDF or .txt files</span>
+        </label>
+        <div id="dropZone"
+          class="border-2 border-dashed rounded-lg p-5 text-center cursor-pointer transition-colors hover:bg-blue-50"
+          style="border-color:#1e3a5f;"
+          onclick="document.getElementById('fileInput').click()"
+          ondragover="event.preventDefault();this.style.backgroundColor='#eff6ff';"
+          ondragleave="this.style.backgroundColor='';"
+          ondrop="handleDrop(event)">
+          <svg class="w-8 h-8 mx-auto mb-2 opacity-30" style="color:#1e3a5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+          </svg>
+          <p class="text-sm text-gray-500">Drop files here or <span class="font-semibold underline" style="color:#1e3a5f;">click to browse</span></p>
+          <p class="text-xs text-gray-400 mt-1">Accepted: .pdf &middot; .txt</p>
+        </div>
+        <input type="file" id="fileInput" class="hidden" multiple accept=".pdf,.txt" onchange="handleFileSelect(event)">
+        <div id="fileList" class="mt-2 space-y-1"></div>
+        <p id="fileError" class="hidden text-xs font-semibold text-red-600 mt-1">Please upload at least one document.</p>
+      </div>
+
+      <!-- CLIENT DETAILS -->
+      <div class="border rounded-lg p-4 space-y-3 border-slate-200">
+        <h3 class="text-xs font-bold uppercase tracking-wider" style="color:#1e3a5f;">Client Details</h3>
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 mb-1">Client Name <span class="text-red-500">*</span></label>
+          <input type="text" id="clientName" placeholder="e.g. Mr John Smith"
+            class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-800"
+            oninput="livePreview()">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 mb-1">Matter Reference <span class="text-red-500">*</span></label>
+          <input type="text" id="matterRef" placeholder="e.g. ABC/2024/001"
+            class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-800"
+            oninput="livePreview()">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 mb-1">Matter Type <span class="text-gray-300 font-normal">(optional)</span></label>
+          <input type="text" id="matterType" placeholder="e.g. Residential Conveyancing"
+            class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-800"
+            oninput="livePreview()">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 mb-1">Client Address <span class="text-gray-300 font-normal">(optional)</span></label>
+          <input type="text" id="clientAddress" placeholder="e.g. 14 Elmwood Close, Bristol, BS8 2QR"
+            class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-800"
+            oninput="livePreview()">
+        </div>
+      </div>
+
+      <!-- SOLICITOR & FIRM -->
+      <div class="border rounded-lg p-4 space-y-3 border-slate-200">
+        <h3 class="text-xs font-bold uppercase tracking-wider" style="color:#1e3a5f;">Solicitor &amp; Firm</h3>
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 mb-1">Solicitor Name <span class="text-red-500">*</span></label>
+          <input type="text" id="solicitorName" placeholder="e.g. Sarah Johnson"
+            class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-800"
+            oninput="livePreview()">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 mb-1">Firm Name <span class="text-red-500">*</span></label>
+          <input type="text" id="firmName" placeholder="e.g. Johnson &amp; Partners Solicitors"
+            class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-800"
+            oninput="livePreview()">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 mb-1">Firm Address <span class="text-gray-300 font-normal">(optional)</span></label>
+          <input type="text" id="firmAddress" placeholder="e.g. 1 Legal Quarter, Bristol, BS1 1AA"
+            class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-800"
+            oninput="livePreview()">
+        </div>
+        <div class="flex gap-2">
+          <div class="flex-1">
+            <label class="block text-xs font-semibold text-gray-500 mb-1">Telephone <span class="text-gray-300 font-normal">(optional)</span></label>
+            <input type="text" id="firmTel" placeholder="e.g. 0117 000 0000"
+              class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-800"
+              oninput="livePreview()">
+          </div>
+          <div class="flex-1">
+            <label class="block text-xs font-semibold text-gray-500 mb-1">Email <span class="text-gray-300 font-normal">(optional)</span></label>
+            <input type="text" id="firmEmail" placeholder="e.g. info@firm.co.uk"
+              class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-800"
+              oninput="livePreview()">
+          </div>
+        </div>
+      </div>
+
+      <!-- FEE BREAKDOWN -->
+      <div class="border rounded-lg p-4 border-slate-200">
+        <h3 class="text-xs font-bold uppercase tracking-wider mb-3" style="color:#1e3a5f;">Fee Breakdown</h3>
+        <div class="space-y-2">
+          <!-- Row 1 -->
+          <div class="flex gap-2 items-center">
+            <span class="text-xs text-gray-300 w-4 flex-shrink-0 text-center">1</span>
+            <input type="text" id="feeLabel1" placeholder="e.g. Initial consultation"
+              class="flex-1 border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-800 min-w-0"
+              oninput="livePreview()">
+            <div class="flex items-stretch border border-slate-300 rounded overflow-hidden flex-shrink-0" style="width:110px;">
+              <span class="px-2 text-sm bg-slate-100 text-gray-500 flex items-center border-r border-slate-300">£</span>
+              <input type="number" id="feeAmount1" placeholder="0.00" step="0.01" min="0"
+                class="flex-1 px-2 py-2 text-sm focus:outline-none w-full" oninput="livePreview()">
+            </div>
+          </div>
+          <!-- Row 2 -->
+          <div class="flex gap-2 items-center">
+            <span class="text-xs text-gray-300 w-4 flex-shrink-0 text-center">2</span>
+            <input type="text" id="feeLabel2" placeholder="e.g. Document review"
+              class="flex-1 border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-800 min-w-0"
+              oninput="livePreview()">
+            <div class="flex items-stretch border border-slate-300 rounded overflow-hidden flex-shrink-0" style="width:110px;">
+              <span class="px-2 text-sm bg-slate-100 text-gray-500 flex items-center border-r border-slate-300">£</span>
+              <input type="number" id="feeAmount2" placeholder="0.00" step="0.01" min="0"
+                class="flex-1 px-2 py-2 text-sm focus:outline-none w-full" oninput="livePreview()">
+            </div>
+          </div>
+          <!-- Row 3 -->
+          <div class="flex gap-2 items-center">
+            <span class="text-xs text-gray-300 w-4 flex-shrink-0 text-center">3</span>
+            <input type="text" id="feeLabel3" placeholder="e.g. Correspondence"
+              class="flex-1 border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-800 min-w-0"
+              oninput="livePreview()">
+            <div class="flex items-stretch border border-slate-300 rounded overflow-hidden flex-shrink-0" style="width:110px;">
+              <span class="px-2 text-sm bg-slate-100 text-gray-500 flex items-center border-r border-slate-300">£</span>
+              <input type="number" id="feeAmount3" placeholder="0.00" step="0.01" min="0"
+                class="flex-1 px-2 py-2 text-sm focus:outline-none w-full" oninput="livePreview()">
+            </div>
+          </div>
+          <!-- Row 4 -->
+          <div class="flex gap-2 items-center">
+            <span class="text-xs text-gray-300 w-4 flex-shrink-0 text-center">4</span>
+            <input type="text" id="feeLabel4" placeholder="e.g. VAT (20%)"
+              class="flex-1 border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-800 min-w-0"
+              oninput="livePreview()">
+            <div class="flex items-stretch border border-slate-300 rounded overflow-hidden flex-shrink-0" style="width:110px;">
+              <span class="px-2 text-sm bg-slate-100 text-gray-500 flex items-center border-r border-slate-300">£</span>
+              <input type="number" id="feeAmount4" placeholder="0.00" step="0.01" min="0"
+                class="flex-1 px-2 py-2 text-sm focus:outline-none w-full" oninput="livePreview()">
+            </div>
+          </div>
+        </div>
+        <div class="mt-3 pt-3 border-t border-slate-200 flex justify-between text-sm font-bold" style="color:#1e3a5f;">
+          <span>Total:</span>
+          <span id="totalDisplay">£0.00</span>
+        </div>
+      </div>
+
+      <!-- STRIPE LINK -->
+      <div>
+        <label class="block text-xs font-bold mb-1" style="color:#1e3a5f;">STRIPE PAYMENT LINK</label>
+        <input type="url" id="stripeLink" placeholder="https://buy.stripe.com/..."
+          class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-800"
+          oninput="livePreview()">
+      </div>
+
+      <!-- ERROR BOX -->
+      <div id="errorBox" class="hidden rounded-lg border p-3 text-sm"
+        style="background:#fef2f2;border-color:#fca5a5;color:#dc2626;"></div>
+
+      <!-- GENERATE BUTTON -->
+      <button onclick="handleGenerate()"
+        class="w-full text-white font-bold py-3 px-6 rounded-lg text-sm tracking-wide shadow hover:opacity-90 transition-opacity"
+        style="background:#1e3a5f;">
+        &#9654;&nbsp; Generate Document Summary &amp; PDF
+      </button>
+
+      <!-- DOWNLOAD BUTTON -->
+      <button id="downloadBtn" onclick="downloadPDF()"
+        class="hidden w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg text-sm tracking-wide shadow transition-colors">
+        &#8659;&nbsp; Download PDF
+      </button>
+
+    </div>
+  </div><!-- end left -->
+
+  <!-- ============================== RIGHT PANEL ============================== -->
+  <div class="w-1/2 overflow-y-auto" style="background:#f1f5f9;">
+    <div class="p-5">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-xs font-bold uppercase tracking-wider text-gray-400">PDF Preview</h2>
+        <span class="text-xs text-gray-400 bg-white border border-gray-200 rounded px-2 py-0.5">Live Preview</span>
+      </div>
+
+      <!-- Preview Card — Letter Format -->
+      <div class="bg-white shadow-lg rounded-lg border border-gray-200" style="font-family:Arial,Helvetica,sans-serif;">
+        <div style="padding:28px 36px;">
+
+          <!-- LETTERHEAD -->
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
+            <div>
+              <div id="pvFirm" style="font-size:15px;font-weight:bold;color:#1e3a5f;line-height:1.2;">Your Firm Name</div>
+              <div id="pvFirmAddr" style="font-size:8.5px;color:#6b7280;margin-top:3px;"></div>
+              <div id="pvFirmTel"   style="font-size:8.5px;color:#6b7280;"></div>
+              <div id="pvFirmEmail" style="font-size:8.5px;color:#6b7280;"></div>
+            </div>
+            <div id="pvLetterDate" style="font-size:8.5px;font-weight:bold;color:#1e3a5f;text-align:right;"></div>
+          </div>
+
+          <!-- RULE -->
+          <hr style="border:none;border-top:1.5px solid #1e3a5f;margin:0 0 12px 0;">
+
+          <!-- PRIVATE AND CONFIDENTIAL -->
+          <div style="font-size:8px;font-style:italic;color:#6b7280;margin-bottom:9px;">Private and Confidential</div>
+
+          <!-- CLIENT ADDRESS BLOCK -->
+          <div style="margin-bottom:9px;">
+            <div id="pvLetterClientName" style="font-size:9.5px;font-weight:bold;color:#374151;">—</div>
+            <div id="pvLetterClientAddr" style="font-size:8.5px;color:#374151;margin-top:1px;"></div>
+          </div>
+
+          <!-- RE LINE -->
+          <div id="pvLetterReLine" style="font-size:9.5px;font-weight:bold;color:#1e3a5f;margin-bottom:9px;">Re: [Matter Reference]</div>
+
+          <!-- GREETING -->
+          <div id="pvLetterGreeting" style="font-size:9.5px;color:#374151;margin-bottom:10px;">Dear [Client Name],</div>
+
+          <!-- LETTER BODY / SUMMARY -->
+          <div id="pvSummary" style="font-size:9px;color:#374151;line-height:1.65;margin-bottom:14px;min-height:55px;">
+            <span style="font-style:italic;color:#9ca3af;font-size:8.5px;">Letter body will appear here after generating&hellip;</span>
+          </div>
+
+          <!-- FEE ACCOUNT -->
+          <hr style="border:none;border-top:1px solid #d1d5db;margin:0 0 6px 0;">
+          <div style="font-size:10.5px;font-weight:bold;color:#1e3a5f;margin-bottom:3px;">Fee Account</div>
+          <hr style="border:none;border-top:1px solid #d1d5db;margin:0 0 7px 0;">
+          <table style="width:100%;border-collapse:collapse;font-size:8px;margin-bottom:5px;">
+            <thead>
+              <tr style="color:#1e3a5f;">
+                <th style="text-align:left;padding:2px 0;font-weight:600;border-bottom:1px solid #e5e7eb;">Description</th>
+                <th style="text-align:right;padding:2px 0;font-weight:600;border-bottom:1px solid #e5e7eb;">Amount</th>
+              </tr>
+            </thead>
+            <tbody id="pvFeeRows">
+              <tr><td colspan="2" style="padding:5px 0;text-align:center;color:#9ca3af;font-style:italic;">No fees entered yet</td></tr>
+            </tbody>
+            <tfoot>
+              <tr style="background:#f1f5f9;outline:1px solid #1e3a5f;">
+                <td style="padding:5px 4px;font-weight:bold;color:#1e3a5f;">TOTAL</td>
+                <td id="pvTotal" style="padding:5px 4px;text-align:right;font-weight:bold;color:#1e3a5f;">£0.00</td>
+              </tr>
+            </tfoot>
+          </table>
+          <div style="font-size:7px;font-style:italic;color:#6b7280;margin-bottom:13px;">Payment is due within 14 days of this letter.</div>
+
+          <!-- HOW TO PAY -->
+          <div style="font-size:10.5px;font-weight:bold;color:#1e3a5f;margin-bottom:5px;">How to Pay</div>
+          <div style="font-size:8.5px;color:#374151;margin-bottom:7px;">To settle your account please click the secure payment link below:</div>
+          <a id="pvPayLink" href="#" target="_blank" rel="noopener"
+            style="display:inline-block;background:#1e3a5f;color:#fff;font-size:8.5px;font-weight:bold;padding:5px 14px;border-radius:3px;text-decoration:none;">Pay Now</a>
+          <div id="pvStripeText" style="font-size:7px;color:#9ca3af;margin-top:4px;word-break:break-all;">No payment link provided</div>
+
+          <!-- CLOSING -->
+          <div style="margin-top:14px;font-size:9px;color:#374151;">
+            <div style="margin-bottom:7px;">If you have any questions regarding this letter or your matter please do not hesitate to contact us.</div>
+            <div style="margin-bottom:18px;">Yours sincerely,</div>
+            <div id="pvSolicitorClose" style="font-weight:bold;color:#1e3a5f;font-size:9.5px;">—</div>
+            <div style="font-size:7.5px;color:#6b7280;">Solicitor</div>
+            <div id="pvFirmClose" style="font-size:7.5px;color:#6b7280;">Your Firm Name</div>
+          </div>
+
+          <!-- FOOTER -->
+          <hr style="border:none;border-top:1px solid #e5e7eb;margin:14px 0 5px 0;">
+          <div style="font-size:6.5px;font-style:italic;color:#9ca3af;text-align:center;margin-bottom:2px;">
+            CONFIDENTIAL &mdash; This letter is intended solely for the named addressee. It does not constitute legal advice.
+          </div>
+          <div id="pvFooterLine" style="font-size:6.5px;color:#9ca3af;text-align:center;"></div>
+
+        </div>
+      </div>
+    </div>
+  </div><!-- end right -->
+
+</div><!-- end two-panel -->
+
+<!-- LOADING OVERLAY -->
+<div id="loadingOverlay" class="hidden fixed inset-0 flex items-center justify-center z-50"
+  style="background:rgba(0,0,0,0.55);">
+  <div class="bg-white rounded-2xl p-8 shadow-2xl text-center max-w-xs w-full mx-4">
+    <div class="spinner mx-auto mb-4"></div>
+    <p class="font-bold text-lg" style="color:#1e3a5f;">Analysing Documents&hellip;</p>
+    <p class="text-gray-500 text-sm mt-1">Claude is reading your files and generating a structured summary. Please wait.</p>
+  </div>
+</div>
+
+<script>
+// =========================================================
+//  STATE
+// =========================================================
+var uploadedFiles = [];
+var generatedSummary = '';
+var pdfDoc = null;
+
+// =========================================================
+//  INIT
+// =========================================================
+(function () {
+  if (typeof pdfjsLib !== 'undefined') {
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+  var today = fmtDate(new Date());
+  document.getElementById('pvLetterDate').textContent = today;
+  document.getElementById('pvFooterLine').textContent = '';
+})();
+
+function fmtDate(d) {
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
+}
+
+// =========================================================
+//  FILE HANDLING
+// =========================================================
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('dropZone').style.backgroundColor = '';
+  var files = Array.from(e.dataTransfer.files).filter(function (f) {
+    return f.name.match(/\.(pdf|txt)$/i);
+  });
+  addFiles(files);
+}
+
+function handleFileSelect(e) {
+  addFiles(Array.from(e.target.files));
+  e.target.value = '';
+}
+
+function addFiles(newFiles) {
+  var remaining = 5 - uploadedFiles.length;
+  if (remaining <= 0) { showError('Maximum 5 files allowed. Remove a file first.'); return; }
+  uploadedFiles = uploadedFiles.concat(newFiles.slice(0, remaining));
+  renderFileList();
+  livePreview();
+  document.getElementById('fileError').classList.add('hidden');
+}
+
+function removeFile(i) {
+  uploadedFiles.splice(i, 1);
+  renderFileList();
+  livePreview();
+}
+
+function renderFileList() {
+  var el = document.getElementById('fileList');
+  if (!uploadedFiles.length) { el.innerHTML = ''; return; }
+  el.innerHTML = uploadedFiles.map(function (f, i) {
+    return '<div class="flex items-center justify-between rounded px-3 py-1.5 border border-slate-200" style="background:#f8fafc;">' +
+      '<div class="flex items-center gap-2 min-w-0">' +
+        '<svg class="w-3.5 h-3.5 flex-shrink-0 text-red-500" fill="currentColor" viewBox="0 0 20 20">' +
+          '<path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd"/>' +
+        '</svg>' +
+        '<span class="text-xs text-gray-700 truncate">' + esc(f.name) + '</span>' +
+        '<span class="text-xs text-gray-400 flex-shrink-0">' + fmtBytes(f.size) + '</span>' +
+      '</div>' +
+      '<button onclick="removeFile(' + i + ')" class="ml-2 text-gray-400 hover:text-red-500 transition-colors flex-shrink-0" title="Remove">' +
+        '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
+          '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>' +
+        '</svg>' +
+      '</button>' +
+    '</div>';
+  }).join('');
+}
+
+function fmtBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+  return (b / 1048576).toFixed(1) + ' MB';
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// =========================================================
+//  LIVE PREVIEW
+// =========================================================
+function buildGreeting(name) {
+  var parts = name.trim().split(/\s+/);
+  var titles = ['Mr', 'Mrs', 'Ms', 'Miss', 'Dr', 'Prof', 'Sir', 'Lord', 'Lady'];
+  var hasTitles = titles.some(function (t) { return name.indexOf(t) !== -1; });
+  if (hasTitles && parts.length >= 3) {
+    var lastName = parts[parts.length - 1];
+    var prefix = parts.slice(0, parts.length - 2).join(' ');
+    return 'Dear ' + prefix + ' ' + lastName + ',';
+  }
+  return 'Dear ' + name + ',';
+}
+
+function livePreview() {
+  var get = function (id) { var el = document.getElementById(id); return el ? el.value || '' : ''; };
+
+  var firmName     = get('firmName')     || 'Your Firm Name';
+  var clientName   = get('clientName')   || '—';
+  var matterRef    = get('matterRef')    || '[Matter Reference]';
+  var matterType   = get('matterType');
+  var solicitor    = get('solicitorName');
+  var today        = fmtDate(new Date());
+
+  // Letterhead
+  document.getElementById('pvFirm').textContent        = firmName;
+  document.getElementById('pvFirmAddr').textContent    = get('firmAddress');
+  document.getElementById('pvFirmTel').textContent     = get('firmTel')    ? 'Tel: '   + get('firmTel')    : '';
+  document.getElementById('pvFirmEmail').textContent   = get('firmEmail')  ? 'Email: ' + get('firmEmail')  : '';
+  document.getElementById('pvLetterDate').textContent  = today;
+
+  // Client block
+  document.getElementById('pvLetterClientName').textContent = clientName;
+  document.getElementById('pvLetterClientAddr').textContent = get('clientAddress');
+
+  // Re line
+  var reLine = 'Re: ' + matterRef + (matterType ? ' — ' + matterType : '');
+  document.getElementById('pvLetterReLine').textContent = reLine;
+
+  // Greeting
+  document.getElementById('pvLetterGreeting').textContent =
+    clientName === '—' ? 'Dear [Client Name],' : buildGreeting(clientName);
+
+  // Closing
+  document.getElementById('pvSolicitorClose').textContent = solicitor || '—';
+  document.getElementById('pvFirmClose').textContent      = firmName;
+  document.getElementById('pvFooterLine').textContent     = firmName + '  ·  ' + today;
+
+  // Fees
+  var rows = [], total = 0;
+  for (var i = 1; i <= 4; i++) {
+    var lbl = document.getElementById('feeLabel' + i).value.trim();
+    var amt = parseFloat(document.getElementById('feeAmount' + i).value) || 0;
+    if (lbl || amt > 0) { rows.push({ lbl: lbl || '—', amt: amt }); total += amt; }
+  }
+  document.getElementById('totalDisplay').textContent = '£' + total.toFixed(2);
+  document.getElementById('pvTotal').textContent      = '£' + total.toFixed(2);
+  var tbody = document.getElementById('pvFeeRows');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="2" style="padding:5px 0;text-align:center;color:#9ca3af;font-style:italic;">No fees entered yet</td></tr>';
+  } else {
+    tbody.innerHTML = rows.map(function (r, idx) {
+      return '<tr style="background:' + (idx % 2 === 0 ? '#fff' : '#f9fafb') + ';">' +
+        '<td style="padding:3px 0;color:#374151;">' + esc(r.lbl) + '</td>' +
+        '<td style="padding:3px 0;text-align:right;color:#374151;">£' + r.amt.toFixed(2) + '</td>' +
+        '</tr>';
+    }).join('');
+  }
+
+  // Stripe
+  var link = get('stripeLink');
+  document.getElementById('pvStripeText').textContent = link || 'No payment link provided';
+  document.getElementById('pvPayLink').href = link || '#';
+}
+
+// =========================================================
+//  VALIDATION
+// =========================================================
+function validateInputs() {
+  var ok = true;
+  ['clientName', 'matterRef', 'solicitorName', 'firmName'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (!el.value.trim()) {
+      el.classList.add('err');
+      ok = false;
+    } else {
+      el.classList.remove('err');
+    }
+  });
+  if (!uploadedFiles.length) {
+    document.getElementById('fileError').classList.remove('hidden');
+    ok = false;
+  } else {
+    document.getElementById('fileError').classList.add('hidden');
+  }
+  return ok;
+}
+
+// =========================================================
+//  TEXT EXTRACTION
+// =========================================================
+async function extractAllText() {
+  var results = [];
+  for (var i = 0; i < uploadedFiles.length; i++) {
+    var f = uploadedFiles[i];
+    try {
+      var text = f.name.toLowerCase().endsWith('.pdf')
+        ? await extractPDFText(f)
+        : await readAsText(f);
+      results.push({ name: f.name, text: text });
+    } catch (e) {
+      results.push({ name: f.name, text: '[Could not extract text from this file: ' + e.message + ']' });
+    }
+  }
+  return results;
+}
+
+function readAsText(file) {
+  return new Promise(function (res, rej) {
+    var r = new FileReader();
+    r.onload = function (e) { res(e.target.result); };
+    r.onerror = rej;
+    r.readAsText(file);
+  });
+}
+
+async function extractPDFText(file) {
+  if (typeof pdfjsLib === 'undefined') throw new Error('PDF.js not available');
+  var buf = await file.arrayBuffer();
+  var pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  var out = '';
+  for (var p = 1; p <= pdf.numPages; p++) {
+    var page = await pdf.getPage(p);
+    var content = await page.getTextContent();
+    out += '\n[Page ' + p + ']\n' + content.items.map(function (it) { return it.str; }).join(' ');
+  }
+  return out;
+}
+
+// =========================================================
+//  CLAUDE API  (proxied via Netlify Function — key stays server-side)
+// =========================================================
+async function callClaude(docs, client) {
+  var docsBlock = docs.map(function (d) {
+    return '=== DOCUMENT: ' + d.name + ' ===\n' + d.text;
+  }).join('\n\n');
+
+  var resp = await fetch('/api/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      system: 'You are a senior solicitor at a UK law firm writing a formal client letter. Read the provided documents carefully and write exactly three flowing paragraphs of body text for a formal solicitor\'s letter. The first paragraph should open by briefly confirming which documents you have reviewed and the purpose of writing. The second paragraph should set out the key facts and current position in professional prose. The third paragraph should address any outstanding matters and the recommended next steps in plain English. Write continuously — no bullet points, no numbered lists, no headings. Use formal, warm, professional British English throughout. Never give legal advice. Maximum 300 words.',
+      messages: [{
+        role: 'user',
+        content: 'Please analyse the following legal documents for client: ' + client.clientName +
+          ' (Matter Ref: ' + client.matterRef + ')\n\n' + docsBlock
+      }]
+    })
+  });
+
+  if (!resp.ok) {
+    var err = await resp.json().catch(function () { return { error: { message: 'Request failed' } }; });
+    throw new Error(err.error && err.error.message ? err.error.message : 'API error ' + resp.status);
+  }
+  var data = await resp.json();
+  return data.content[0].text;
+}
+
+// =========================================================
+//  FEE HELPER
+// =========================================================
+function getFees() {
+  var items = [], total = 0;
+  for (var i = 1; i <= 4; i++) {
+    var lbl = document.getElementById('feeLabel' + i).value.trim();
+    var amt = parseFloat(document.getElementById('feeAmount' + i).value) || 0;
+    if (lbl || amt > 0) { items.push({ lbl: lbl || '—', amt: amt }); total += amt; }
+  }
+  return { items: items, total: total };
+}
+
+// =========================================================
+//  PDF GENERATION  —  Formal Solicitor Letter
+// =========================================================
+function buildPDF(summary, fileNames, c) {
+  var J = window.jspdf;
+  var doc = new J.jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  var W = 210, H = 297, M = 22, CW = W - M * 2;
+  var today = fmtDate(new Date());
+  var LH = 5.2;  // body line height
+
+  function setT(r, g, b) { doc.setTextColor(r, g, b); }
+  function setD(r, g, b) { doc.setDrawColor(r, g, b); }
+  function bold(sz) { doc.setFont('helvetica', 'bold');   if (sz) doc.setFontSize(sz); }
+  function norm(sz) { doc.setFont('helvetica', 'normal'); if (sz) doc.setFontSize(sz); }
+  function ital(sz) { doc.setFont('helvetica', 'italic'); if (sz) doc.setFontSize(sz); }
+  function newPage() {
+    doc.addPage();
+    addLetterFooter(doc, W, H, c.firmName, today, M);
+    return 22;
+  }
+
+  // ============================================================
+  //  LETTERHEAD
+  // ============================================================
+  var y = 18;
+
+  // Firm name
+  bold(16); setT(30, 58, 95);
+  doc.text(c.firmName, M, y);
+  y += 7;
+
+  // Firm contact details (left) — date top-right
+  norm(8.5); setT(107, 114, 128);
+  var dateY = 18 + 7;          // align date with first address line
+  if (c.firmAddress) { doc.text(c.firmAddress, M, y); y += 4.5; }
+  if (c.firmTel)     { doc.text('Tel: '   + c.firmTel,   M, y); y += 4.5; }
+  if (c.firmEmail)   { doc.text('Email: ' + c.firmEmail, M, y); y += 4.5; }
+  if (y < 34)        { y = 34; }
+
+  // Date — right-aligned, level with first address line
+  bold(9); setT(30, 58, 95);
+  doc.text(today, W - M, dateY, { align: 'right' });
+
+  y += 4;
+
+  // Thin navy rule
+  setD(30, 58, 95); doc.setLineWidth(0.5);
+  doc.line(M, y, W - M, y);
+  y += 9;
+
+  // ============================================================
+  //  LETTER OPENING
+  // ============================================================
+  // Private and Confidential
+  ital(8.5); setT(107, 114, 128);
+  doc.text('Private and Confidential', M, y);
+  y += 8;
+
+  // Client name + address
+  bold(10); setT(55, 65, 81);
+  doc.text(c.clientName, M, y);
+  y += 5.5;
+  if (c.clientAddress) {
+    norm(9); setT(55, 65, 81);
+    doc.text(c.clientAddress, M, y);
+    y += 5;
+  }
+  y += 6;
+
+  // Re: line
+  bold(10); setT(30, 58, 95);
+  var reLine = 'Re: ' + c.matterRef + (c.matterType ? '  —  ' + c.matterType : '');
+  doc.text(reLine, M, y);
+  y += 8;
+
+  // Greeting
+  norm(10); setT(55, 65, 81);
+  doc.text(buildGreeting(c.clientName), M, y);
+  y += 10;
+
+  // ============================================================
+  //  BODY — three flowing paragraphs from Claude
+  // ============================================================
+  norm(9.5); setT(55, 65, 81);
+  var paras = summary.split(/\n\n+/).filter(function (p) { return p.trim(); });
+  paras.forEach(function (para) {
+    var lines = doc.splitTextToSize(para.trim().replace(/\n/g, ' '), CW);
+    lines.forEach(function (line) {
+      if (y > H - 45) { y = newPage(); norm(9.5); setT(55, 65, 81); }
+      doc.text(line, M, y);
+      y += LH;
+    });
+    y += 4;
+  });
+  y += 6;
+
+  // ============================================================
+  //  FEE ACCOUNT
+  // ============================================================
+  if (y > H - 105) { y = newPage(); }
+
+  // Rule above
+  setD(209, 213, 219); doc.setLineWidth(0.3);
+  doc.line(M, y, W - M, y);
+  y += 7;
+
+  // Heading
+  bold(11); setT(30, 58, 95);
+  doc.text('Fee Account', M, y);
+  y += 3;
+
+  // Rule below heading
+  setD(209, 213, 219); doc.setLineWidth(0.3);
+  doc.line(M, y, W - M, y);
+  y += 6;
+
+  // Column headers
+  bold(8); setT(30, 58, 95);
+  doc.text('Description', M, y);
+  doc.text('Amount', W - M, y, { align: 'right' });
+  y += 2.5;
+  setD(209, 213, 219); doc.setLineWidth(0.2);
+  doc.line(M, y, W - M, y);
+  y += 5;
+
+  // Fee rows
+  var fees = getFees();
+  norm(9); setT(55, 65, 81);
+  fees.items.forEach(function (it, idx) {
+    if (idx % 2 === 1) {
+      doc.setFillColor(249, 250, 251);
+      doc.rect(M, y - 4, CW, 6, 'F');
+    }
+    setT(55, 65, 81);
+    doc.text(it.lbl, M, y);
+    doc.text('£' + it.amt.toFixed(2), W - M, y, { align: 'right' });
+    y += 6;
+  });
+
+  if (!fees.items.length) {
+    ital(8.5); setT(156, 163, 175);
+    doc.text('No fee items entered.', M, y);
+    y += 6;
+  }
+
+  y += 2;
+
+  // TOTAL row — shaded with navy border
+  doc.setFillColor(241, 245, 249);
+  setD(30, 58, 95); doc.setLineWidth(0.35);
+  doc.rect(M, y, CW, 8.5, 'FD');
+  bold(10); setT(30, 58, 95);
+  doc.text('TOTAL', M + 3, y + 6);
+  doc.text('£' + fees.total.toFixed(2), W - M - 3, y + 6, { align: 'right' });
+  y += 13;
+
+  // Payment due note
+  ital(8); setT(107, 114, 128);
+  doc.text('Payment is due within 14 days of this letter.', M, y);
+  y += 12;
+
+  // ============================================================
+  //  HOW TO PAY
+  // ============================================================
+  if (y > H - 65) { y = newPage(); }
+
+  bold(11); setT(30, 58, 95);
+  doc.text('How to Pay', M, y);
+  y += 7;
+
+  norm(9.5); setT(55, 65, 81);
+  doc.text('To settle your account please click the secure payment link below:', M, y);
+  y += 9;
+
+  // Navy Pay Now button
+  var btnW = 44, btnH = 9;
+  doc.setFillColor(30, 58, 95);
+  doc.roundedRect(M, y, btnW, btnH, 2, 2, 'F');
+  setT(255, 255, 255); bold(9.5);
+  doc.text('Pay Now', M + btnW / 2, y + 6, { align: 'center' });
+  if (c.stripeLink) {
+    doc.link(M, y, btnW, btnH, { url: c.stripeLink });
+  }
+  y += btnH + 5;
+
+  if (c.stripeLink) {
+    norm(7.5); setT(107, 114, 128);
+    var linkText = doc.splitTextToSize(c.stripeLink, CW)[0];
+    doc.text(linkText, M, y);
+    y += 5;
+  }
+
+  y += 10;
+
+  // ============================================================
+  //  LETTER CLOSING
+  // ============================================================
+  if (y > H - 72) { y = newPage(); }
+
+  norm(9.5); setT(55, 65, 81);
+  var closing = 'If you have any questions regarding this letter or your matter please do not hesitate to contact us.';
+  doc.splitTextToSize(closing, CW).forEach(function (line) {
+    doc.text(line, M, y); y += LH;
+  });
+  y += 7;
+
+  doc.text('Yours sincerely,', M, y);
+  y += 24;   // signature gap — three clear lines
+
+  bold(10); setT(30, 58, 95);
+  doc.text(c.solicitorName, M, y);
+  y += 5.5;
+
+  norm(9); setT(107, 114, 128);
+  doc.text('Solicitor', M, y);
+  y += 5;
+  doc.text(c.firmName, M, y);
+
+  // Footer on final page
+  addLetterFooter(doc, W, H, c.firmName, today, M);
+
+  return doc;
+}
+
+function addLetterFooter(doc, W, H, firmName, today, M) {
+  doc.setDrawColor(209, 213, 219);
+  doc.setLineWidth(0.3);
+  doc.line(M, H - 18, W - M, H - 18);
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(7);
+  doc.setTextColor(156, 163, 175);
+  doc.text(
+    'CONFIDENTIAL — This letter is intended solely for the named addressee. It does not constitute legal advice.',
+    W / 2, H - 11.5, { align: 'center' }
+  );
+  doc.setFont('helvetica', 'normal');
+  doc.text(firmName + '  ·  ' + today, W / 2, H - 6.5, { align: 'center' });
+}
+
+// =========================================================
+//  MAIN HANDLER
+// =========================================================
+async function handleGenerate() {
+  clearError();
+  if (!validateInputs()) {
+    showError('Please complete all required fields (highlighted in red) before generating.');
+    return;
+  }
+  document.getElementById('loadingOverlay').classList.remove('hidden');
+  document.getElementById('downloadBtn').classList.add('hidden');
+
+  try {
+    var client = {
+      clientName:    document.getElementById('clientName').value.trim(),
+      clientAddress: document.getElementById('clientAddress').value.trim(),
+      matterRef:     document.getElementById('matterRef').value.trim(),
+      matterType:    document.getElementById('matterType').value.trim(),
+      solicitorName: document.getElementById('solicitorName').value.trim(),
+      firmName:      document.getElementById('firmName').value.trim(),
+      firmAddress:   document.getElementById('firmAddress').value.trim(),
+      firmTel:       document.getElementById('firmTel').value.trim(),
+      firmEmail:     document.getElementById('firmEmail').value.trim(),
+      stripeLink:    document.getElementById('stripeLink').value.trim()
+    };
+
+    var docs = await extractAllText();
+    generatedSummary = await callClaude(docs, client);
+
+    // Update preview summary
+    var pvSummary = document.getElementById('pvSummary');
+    pvSummary.innerHTML = generatedSummary
+      .split('\n\n').map(function (para) {
+        return '<p class="text-sm text-gray-700 leading-relaxed mb-2">' +
+          para.replace(/\n/g, '<br>') + '</p>';
+      }).join('');
+
+    // Build PDF
+    pdfDoc = buildPDF(generatedSummary, uploadedFiles.map(function (f) { return f.name; }), client);
+    document.getElementById('downloadBtn').classList.remove('hidden');
+
+  } catch (e) {
+    console.error(e);
+    showError('Error: ' + e.message + '. Please check your API key and internet connection, then try again.');
+  } finally {
+    document.getElementById('loadingOverlay').classList.add('hidden');
+  }
+}
+
+function downloadPDF() {
+  if (!pdfDoc) return;
+  var name = (document.getElementById('clientName').value.trim() || 'Client').replace(/\s+/g, '_');
+  var ref = (document.getElementById('matterRef').value.trim() || 'Ref').replace(/[\/\\:*?"<>|]/g, '-');
+  pdfDoc.save(name + '_' + ref + '_Summary.pdf');
+}
+
+function showError(msg) {
+  var el = document.getElementById('errorBox');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+
+function clearError() {
+  document.getElementById('errorBox').classList.add('hidden');
+}
+
+// =========================================================
+//  DEMO MODE
+// =========================================================
+function loadDemoData() {
+  // Text fields
+  document.getElementById('firmName').value      = 'Harrison and Cole Solicitors';
+  document.getElementById('firmAddress').value   = '12 Queen Square, Bristol, BS1 4NT';
+  document.getElementById('firmTel').value       = '0117 923 0000';
+  document.getElementById('firmEmail').value     = 'enquiries@harrisonandcole.co.uk';
+  document.getElementById('solicitorName').value = 'James Harrison';
+  document.getElementById('clientName').value    = 'Mr and Mrs David Clarke';
+  document.getElementById('clientAddress').value = '14 Elmwood Close, Bristol, BS8 2QR';
+  document.getElementById('matterRef').value     = 'CONV-2024-441';
+  document.getElementById('matterType').value    = 'Residential Conveyancing';
+  document.getElementById('stripeLink').value    = 'https://buy.stripe.com/test_harrison_cole_conv2024';
+
+  // Fee breakdown — realistic UK conveyancing fees
+  document.getElementById('feeLabel1').value  = 'Legal fees (Conveyancing)';
+  document.getElementById('feeAmount1').value = '1200.00';
+  document.getElementById('feeLabel2').value  = 'Search fees';
+  document.getElementById('feeAmount2').value = '350.00';
+  document.getElementById('feeLabel3').value  = 'Land Registry fee';
+  document.getElementById('feeAmount3').value = '270.00';
+  document.getElementById('feeLabel4').value  = 'VAT (20%)';
+  document.getElementById('feeAmount4').value = '364.00';
+
+  // Synthetic attendance note as a .txt file so the API call works
+  var attendanceNote = [
+    'ATTENDANCE NOTE',
+    'Firm: Harrison and Cole Solicitors',
+    'File Handler: James Harrison',
+    'Client: Mr and Mrs David Clarke',
+    'Matter Reference: CONV-2024-441',
+    'Case Type: Residential Conveyancing (Purchase)',
+    'Date: ' + fmtDate(new Date()),
+    '',
+    'MATTER PROGRESS',
+    '---------------',
+    'Property searches have been returned and are clear with no adverse entries.',
+    'A formal mortgage offer has been received from the lender and reviewed.',
+    'The draft contract has been approved by the buyer\'s solicitors following',
+    'negotiation on the fixtures and fittings schedule.',
+    'The seller\'s solicitors have confirmed the target completion date.',
+    '',
+    'KEY FACTS',
+    '---------',
+    '- Property: 14 Elmwood Close, Bristol, BS8 2QR',
+    '- Purchase price: £385,000',
+    '- Mortgage lender: NatWest plc',
+    '- Mortgage amount: £270,000',
+    '- Deposit: £115,000 (29.9%)',
+    '- Seller: Mr Robert and Mrs Susan Patterson',
+    '- Seller\'s solicitors: Caldwell & Wright LLP, Bath',
+    '',
+    'IMPORTANT DATES',
+    '---------------',
+    '- Search results received: 4 November 2024',
+    '- Mortgage offer received: 12 November 2024',
+    '- Draft contract approved by buyer: 18 November 2024',
+    '- Seller confirmed target completion: 19 November 2024',
+    '- Exchange of contracts: scheduled Friday 22 November 2024',
+    '- Target completion: Friday 6 December 2024',
+    '',
+    'OUTSTANDING ISSUES',
+    '------------------',
+    '- Final signed contract required from clients prior to exchange',
+    '- Deposit funds to be confirmed as cleared in client account by Thursday',
+    '- Building insurance to be in place from exchange',
+    '- SDLT return to be filed within 14 days of completion',
+    '- Land Registry application to be submitted post-completion',
+    '',
+    'RECOMMENDED NEXT STEPS',
+    '----------------------',
+    '1. Exchange contracts on Friday 22 November 2024',
+    '2. Confirm completion arrangements with mortgage lender',
+    '3. Request completion statement from seller\'s solicitors',
+    '4. Prepare SDLT return ready for filing on completion',
+    '5. Arrange final searches immediately prior to completion',
+    '6. File Land Registry AP1 application within priority period',
+  ].join('\n');
+
+  var demoFile = new File(
+    [attendanceNote],
+    'Attendance_Note_CONV-2024-441.txt',
+    { type: 'text/plain' }
+  );
+
+  // Replace file list with just the demo file
+  uploadedFiles = [demoFile];
+  renderFileList();
+
+  // Clear any previous errors
+  clearError();
+  document.getElementById('fileError').classList.add('hidden');
+  ['clientName', 'matterRef', 'solicitorName', 'firmName'].forEach(function (id) {
+    document.getElementById(id).classList.remove('err');
+    document.getElementById(id).style.borderColor = '';
+    document.getElementById(id).style.backgroundColor = '';
+  });
+
+  livePreview();
+}
+
+// Boot
+livePreview();
+</script>
+</body>
+</html>
